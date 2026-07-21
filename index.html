@@ -268,11 +268,28 @@ function shortLabel(d){const[a,b,c]=d.split('/');return new Date(+c,+b-1,+a).toL
 function is20(s){return (s||'').replace(/\s/g,'').startsWith('20');}
 function utilHex(p){if(p>=90&&p<=110)return T.green;if(p>110)return T.gold;if(p>=60)return T.gold;return T.red;}
 function pillCls(p){return p>=90?'hi':p>=60?'mid':'lo';}
-function baseOpts(ex){return Object.assign({responsive:true,maintainAspectRatio:false,
-  plugins:{legend:{display:false},tooltip:{backgroundColor:T.navy,padding:10,titleFont:{family:'Space Grotesk'},bodyFont:{family:'Inter'}}},
-  scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},
-          y:{grid:{color:'#f0eee6'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted},beginAtZero:true}}},ex||{});}
-function refLine(id,val,label,color){return {id,afterDraw(c){const y=c.scales.y.getPixelForValue(val);if(isNaN(y))return;const{left,right}=c.chartArea;const g=c.ctx;g.save();g.strokeStyle=color;g.setLineDash([5,4]);g.lineWidth=1.4;g.beginPath();g.moveTo(left,y);g.lineTo(right,y);g.stroke();g.setLineDash([]);g.fillStyle=color;g.font='600 10px Inter';g.fillText(label,right-g.measureText(label).width-4,y-5);g.restore();}};}
+const TIP={backgroundColor:'rgba(15,32,72,.97)',padding:12,cornerRadius:10,titleFont:{family:'Space Grotesk',size:12,weight:'600'},bodyFont:{family:'Inter',size:12},titleColor:'#fff',bodyColor:'#e7edf7',displayColors:true,usePointStyle:true,boxPadding:5,caretPadding:8,borderColor:'rgba(201,154,46,.4)',borderWidth:1,titleMarginBottom:6};
+const AXIS_X={grid:{display:false},border:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted,padding:4}};
+const AXIS_Y={grid:{color:'rgba(17,41,92,.07)'},border:{display:false},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted,padding:6},beginAtZero:true,grace:'12%'};
+function deepMerge(base,ex){const out=Object.assign({},base,ex);
+  out.plugins=Object.assign({},base.plugins,ex.plugins);
+  if(base.plugins&&base.plugins.tooltip)out.plugins.tooltip=Object.assign({},base.plugins.tooltip,(ex.plugins&&ex.plugins.tooltip)||{});
+  if(base.plugins&&base.plugins.legend)out.plugins.legend=Object.assign({},base.plugins.legend,(ex.plugins&&ex.plugins.legend)||{});
+  out.scales=Object.assign({},base.scales,ex.scales||{});
+  return out;}
+function baseOpts(ex){return deepMerge({responsive:true,maintainAspectRatio:false,
+  layout:{padding:{top:12,right:6,left:2,bottom:0}},
+  animation:{duration:600,easing:'easeOutQuart'},
+  plugins:{legend:{display:false},tooltip:TIP},
+  scales:{x:AXIS_X,y:AXIS_Y}},ex||{});}
+function donutOpts(ex){return deepMerge({responsive:true,maintainAspectRatio:false,cutout:'64%',
+  layout:{padding:6},animation:{duration:600,easing:'easeOutQuart'},
+  plugins:{legend:{position:'bottom',labels:{font:{family:'Inter',size:12},padding:14,boxWidth:10,boxHeight:10,usePointStyle:true,pointStyle:'circle'}},tooltip:TIP}},ex||{});}
+function truckLine(data,axis){return {label:'Trucks',type:'line',data,borderColor:T.red,backgroundColor:T.red,
+  borderWidth:2.25,pointRadius:3.2,pointHoverRadius:5.5,pointBackgroundColor:'#fff',pointBorderColor:T.red,pointBorderWidth:2,
+  yAxisID:axis||'y1',tension:.4,order:-1,clip:false};}
+function vgrad(chart,hex){const a=chart.chartArea;if(!a)return hex;const g=chart.ctx.createLinearGradient(0,a.top,0,a.bottom);g.addColorStop(0,hex);g.addColorStop(1,hex+'d9');return g;}
+function refLine(id,val,label,color){return {id,afterDatasetsDraw(c){const y=c.scales.y.getPixelForValue(val);if(isNaN(y))return;const{left,right}=c.chartArea;const g=c.ctx;g.save();g.strokeStyle=color;g.setLineDash([5,4]);g.lineWidth=1.4;g.globalAlpha=.85;g.beginPath();g.moveTo(left,y);g.lineTo(right,y);g.stroke();g.setLineDash([]);g.globalAlpha=1;g.fillStyle=color;g.font='600 10px Inter';const tw=g.measureText(label).width;g.fillStyle='rgba(255,255,255,.85)';g.fillRect(right-tw-8,y-14,tw+6,12);g.fillStyle=color;g.fillText(label,right-tw-5,y-5);g.restore();}};}
 function rowsToObj(rows,cols){return rows.map(r=>{const o={};cols.forEach((c,i)=>o[c]=(r[i]||'').toString().trim());return o;});}
 
 async function gvizLoad(gid,mapper){
@@ -344,38 +361,37 @@ const Laden=(()=>{
     // util chart
     destroy('l_util');
     charts.l_util=new Chart(document.getElementById('l_util'),{type:'bar',
-      data:{labels:win.map(d=>d.short),datasets:[{data:win.map(d=>+d.util.toFixed(1)),backgroundColor:win.map(d=>utilHex(d.util)),borderRadius:5,maxBarThickness:34}]},
+      data:{labels:win.map(d=>d.short),datasets:[{data:win.map(d=>+d.util.toFixed(1)),backgroundColor:(c)=>vgrad(c.chart,utilHex(win[c.dataIndex].util)),hoverBackgroundColor:(c)=>utilHex(win[c.dataIndex].util),borderRadius:{topLeft:5,topRight:5,bottomLeft:2,bottomRight:2},borderSkipped:false,maxBarThickness:36}]},
       options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const d=win[c.dataIndex];return [` Utilization: ${c.parsed.y}%`,` Lease: ${d.lease} / target ${target.toFixed(1)}`,` Trucks: ${d.nTrucks}`];}}}},
         scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:10},color:T.muted,maxRotation:0,autoSkip:true,maxTicksLimit:15}},
-                y:{grid:{color:'#f0eee6'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted,callback:v=>v+'%'},beginAtZero:true,suggestedMax:120}}})});
+                y:{grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted,callback:v=>v+'%'},beginAtZero:true,suggestedMax:120}}})});
     charts.l_util.config.plugins=[refLine('lref',100,'100% target',T.red)];charts.l_util.update();
 
     // mix donut
     destroy('l_mix');
     charts.l_mix=new Chart(document.getElementById('l_mix'),{type:'doughnut',
-      data:{labels:['Lease truck','Oncall'],datasets:[{data:[totLease,totOncall],backgroundColor:[T.gold,T.navy],borderWidth:2,borderColor:'#fff'}]},
-      options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{font:{family:'Inter',size:12},padding:14,boxWidth:12,boxHeight:12}},
-        tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed} (${(c.parsed/(totLease+totOncall)*100).toFixed(0)}%)`}}}}});
+      data:{labels:['Lease truck','Oncall'],datasets:[{data:[totLease,totOncall],backgroundColor:[T.gold,T.navy],borderWidth:3,borderColor:'#fff',hoverOffset:6}]},
+      options:donutOpts({cutout:'62%',plugins:{tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed} (${(c.parsed/(totLease+totOncall)*100).toFixed(0)}%)`}}}})});
 
     // volume stacked + trucks
     destroy('l_vol');
     charts.l_vol=new Chart(document.getElementById('l_vol'),{type:'bar',data:{labels:win.map(d=>d.short),datasets:[
-      {label:'Lease',data:win.map(d=>d.lease),backgroundColor:T.gold,stack:'s',borderRadius:3,maxBarThickness:30},
-      {label:'Oncall',data:win.map(d=>d.oncall),backgroundColor:T.navy,stack:'s',borderRadius:3,maxBarThickness:30},
-      {label:'Trucks',type:'line',data:win.map(d=>d.nTrucks),borderColor:T.red,backgroundColor:T.red,borderWidth:2.5,pointRadius:2,yAxisID:'y1',tension:.3,order:0}]},
+      {label:'Lease',data:win.map(d=>d.lease),backgroundColor:T.gold,stack:'s',borderRadius:{topLeft:4,topRight:4},borderSkipped:false,maxBarThickness:30},
+      {label:'Oncall',data:win.map(d=>d.oncall),backgroundColor:T.navy,stack:'s',borderRadius:{topLeft:4,topRight:4},borderSkipped:false,maxBarThickness:30},
+      truckLine(win.map(d=>d.nTrucks))]},
       options:baseOpts({plugins:{legend:{display:true,position:'bottom',labels:{font:{family:'Inter',size:11},boxWidth:11,boxHeight:11,padding:12}},tooltip:{mode:'index',intersect:false}},
         scales:{x:{stacked:true,grid:{display:false},ticks:{font:{family:'Inter',size:10},color:T.muted,maxRotation:0,autoSkip:true,maxTicksLimit:15}},
-                y:{stacked:true,grid:{color:'#f0eee6'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted}},
-                y1:{position:'right',beginAtZero:true,grid:{display:false},ticks:{font:{family:'Space Grotesk',size:11},color:T.red}}}})});
+                y:{stacked:true,grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted}},
+                y1:{position:'right',beginAtZero:true,grace:'35%',grid:{display:false},border:{display:false},ticks:{font:{family:'Space Grotesk',size:11},color:T.red,padding:4}}}})});
 
     // delay pareto (full dataset)
     destroy('l_delay');
     const dc={};RAW.forEach(r=>{const c=catOf(r.remCat);if(c&&c!=='Other / detail')dc[c]=(dc[c]||0)+1;});
     const arr=Object.entries(dc).sort((a,b)=>b[1]-a[1]).slice(0,7);
     charts.l_delay=new Chart(document.getElementById('l_delay'),{type:'bar',
-      data:{labels:arr.map(x=>SHORT[x[0]]||x[0]),datasets:[{data:arr.map(x=>x[1]),backgroundColor:arr.map((x,i)=>i===0?T.red:i<3?T.gold:T.navy2),borderRadius:5,maxBarThickness:26}]},
+      data:{labels:arr.map(x=>SHORT[x[0]]||x[0]),datasets:[{data:arr.map(x=>x[1]),backgroundColor:arr.map((x,i)=>i===0?T.red:i<3?T.gold:T.navy2),borderRadius:{topRight:5,bottomRight:5},borderSkipped:false,maxBarThickness:24}]},
       options:baseOpts({indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.x} trips flagged`}}},
-        scales:{x:{grid:{color:'#f0eee6'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted},beginAtZero:true},
+        scales:{x:{grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted},beginAtZero:true},
                 y:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.ink}}}})});
 
     // vendors
@@ -389,9 +405,8 @@ const Laden=(()=>{
     const sm={};RAW.forEach(r=>{const s=r.size||'—';sm[s]=(sm[s]||0)+1;});
     const sarr=Object.entries(sm).sort((a,b)=>b[1]-a[1]);
     charts.l_size=new Chart(document.getElementById('l_size'),{type:'doughnut',
-      data:{labels:sarr.map(x=>x[0]),datasets:[{data:sarr.map(x=>x[1]),backgroundColor:[T.navy,T.gold,T.green,T.navy2,'#b98a2a','#7a8aa5'],borderWidth:2,borderColor:'#fff'}]},
-      options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'bottom',labels:{font:{family:'Inter',size:11},padding:10,boxWidth:11,boxHeight:11}},
-        tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed}`}}}}});
+      data:{labels:sarr.map(x=>x[0]),datasets:[{data:sarr.map(x=>x[1]),backgroundColor:[T.navy,T.gold,T.green,T.navy2,'#b98a2a','#7a8aa5'],borderWidth:3,borderColor:'#fff',hoverOffset:6}]},
+      options:donutOpts({cutout:'58%',plugins:{legend:{labels:{font:{family:'Inter',size:11},padding:10,boxWidth:9,boxHeight:9,usePointStyle:true,pointStyle:'circle'}},tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed}`}}}})});
 
     // weekly
     const wk=weekly(allDays,target);
@@ -473,27 +488,27 @@ const Offhire=(()=>{
 
     destroy('o_util');
     charts.o_util=new Chart(document.getElementById('o_util'),{type:'bar',
-      data:{labels:days.map(d=>d.short),datasets:[{data:days.map(d=>+d.util.toFixed(1)),backgroundColor:days.map(d=>utilHex(d.util)),borderRadius:6,maxBarThickness:46}]},
+      data:{labels:days.map(d=>d.short),datasets:[{data:days.map(d=>+d.util.toFixed(1)),backgroundColor:(c)=>vgrad(c.chart,utilHex(days[c.dataIndex].util)),hoverBackgroundColor:(c)=>utilHex(days[c.dataIndex].util),borderRadius:{topLeft:6,topRight:6,bottomLeft:2,bottomRight:2},borderSkipped:false,maxBarThickness:48}]},
       options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const d=days[c.dataIndex];return [` Utilization: ${c.parsed.y}%`,` Trips: ${d.trips} / target ${target.toFixed(1)}`,` Trucks: ${d.nTrucks}`];}}}},
-        scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},y:{grid:{color:'#f0eee6'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted,callback:v=>v+'%'},beginAtZero:true,suggestedMax:120}}})});
+        scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},y:{grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted,callback:v=>v+'%'},beginAtZero:true,suggestedMax:120}}})});
     charts.o_util.config.plugins=[refLine('oref',100,'100% target',T.red)];charts.o_util.update();
 
     destroy('o_mix');
     const m={};rows.forEach(r=>m[r.activity]=(m[r.activity]||0)+1);const ml=Object.keys(m);
-    charts.o_mix=new Chart(document.getElementById('o_mix'),{type:'doughnut',data:{labels:ml,datasets:[{data:ml.map(l=>m[l]),backgroundColor:ml.map(l=>ACT_COLOR[l]||T.muted),borderWidth:2,borderColor:'#fff'}]},
-      options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{font:{family:'Inter',size:12},padding:14,boxWidth:12,boxHeight:12}},tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed} (${(c.parsed/rows.length*100).toFixed(0)}%)`}}}}});
+    charts.o_mix=new Chart(document.getElementById('o_mix'),{type:'doughnut',data:{labels:ml,datasets:[{data:ml.map(l=>m[l]),backgroundColor:ml.map(l=>ACT_COLOR[l]||T.muted),borderWidth:3,borderColor:'#fff',hoverOffset:6}]},
+      options:donutOpts({cutout:'62%',plugins:{tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed} (${(c.parsed/rows.length*100).toFixed(0)}%)`}}}})});
 
     destroy('o_vol');
     const acts=['OFFHIRE','REPO','OB DOMESTIK'];
-    const ds=acts.map(a=>({label:a,data:days.map(d=>d.act[a]||0),backgroundColor:ACT_COLOR[a],stack:'s',borderRadius:3,maxBarThickness:38}));
-    ds.push({label:'Trucks',type:'line',data:days.map(d=>d.nTrucks),borderColor:T.red,backgroundColor:T.red,borderWidth:2.5,pointRadius:3,yAxisID:'y1',tension:.3,order:0});
+    const ds=acts.map(a=>({label:a,data:days.map(d=>d.act[a]||0),backgroundColor:ACT_COLOR[a],stack:'s',borderRadius:{topLeft:4,topRight:4},borderSkipped:false,maxBarThickness:38}));
+    ds.push(truckLine(days.map(d=>d.nTrucks)));
     charts.o_vol=new Chart(document.getElementById('o_vol'),{type:'bar',data:{labels:days.map(d=>d.short),datasets:ds},
       options:baseOpts({plugins:{legend:{display:true,position:'bottom',labels:{font:{family:'Inter',size:11},boxWidth:11,boxHeight:11,padding:12}},tooltip:{mode:'index',intersect:false}},
-        scales:{x:{stacked:true,grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},y:{stacked:true,grid:{color:'#f0eee6'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted}},y1:{position:'right',beginAtZero:true,grid:{display:false},ticks:{font:{family:'Space Grotesk',size:11},color:T.red}}}})});
+        scales:{x:{stacked:true,grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},y:{stacked:true,grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted}},y1:{position:'right',beginAtZero:true,grace:'35%',grid:{display:false},border:{display:false},ticks:{font:{family:'Space Grotesk',size:11},color:T.red,padding:4}}}})});
 
     destroy('o_tpt');
-    charts.o_tpt=new Chart(document.getElementById('o_tpt'),{type:'bar',data:{labels:days.map(d=>d.short),datasets:[{data:days.map(d=>+d.tpt.toFixed(2)),backgroundColor:days.map(d=>d.tpt>=S.rate?T.green:d.tpt>=S.rate*.7?T.gold:T.red),borderRadius:6,maxBarThickness:46}]},
-      options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y} trips/truck (target ${S.rate})`}}},scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},y:{grid:{color:'#f0eee6'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted},beginAtZero:true}}})});
+    charts.o_tpt=new Chart(document.getElementById('o_tpt'),{type:'bar',data:{labels:days.map(d=>d.short),datasets:[{data:days.map(d=>+d.tpt.toFixed(2)),backgroundColor:(c)=>vgrad(c.chart,days[c.dataIndex].tpt>=S.rate?T.green:days[c.dataIndex].tpt>=S.rate*.7?T.gold:T.red),borderRadius:{topLeft:6,topRight:6,bottomLeft:2,bottomRight:2},borderSkipped:false,maxBarThickness:48}]},
+      options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y} trips/truck (target ${S.rate})`}}},scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},y:{grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted},beginAtZero:true}}})});
     charts.o_tpt.config.plugins=[refLine('otref',S.rate,'target '+S.rate,T.navy)];charts.o_tpt.update();
 
     const lm={};rows.forEach(r=>lm[r.dest]=(lm[r.dest]||0)+1);
@@ -501,13 +516,13 @@ const Offhire=(()=>{
 
     destroy('o_size');
     const sm={};rows.forEach(r=>{const k=is20(r.size)?'20ft':'40ft';sm[k]=(sm[k]||0)+1;});const sl=Object.keys(sm);
-    charts.o_size=new Chart(document.getElementById('o_size'),{type:'doughnut',data:{labels:sl,datasets:[{data:sl.map(l=>sm[l]),backgroundColor:[T.navy,T.gold],borderWidth:2,borderColor:'#fff'}]},
-      options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{font:{family:'Inter',size:12},padding:14,boxWidth:12,boxHeight:12}},tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed} (${(c.parsed/rows.length*100).toFixed(0)}%)`}}}}});
+    charts.o_size=new Chart(document.getElementById('o_size'),{type:'doughnut',data:{labels:sl,datasets:[{data:sl.map(l=>sm[l]),backgroundColor:[T.navy,T.gold],borderWidth:3,borderColor:'#fff',hoverOffset:6}]},
+      options:donutOpts({cutout:'62%',plugins:{tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed} (${(c.parsed/rows.length*100).toFixed(0)}%)`}}}})});
 
     destroy('o_band');
     const bands=[['<60%',0,60,T.red],['60–89%',60,90,T.gold],['90–110%',90,110.0001,T.green],['>110%',110.0001,1e9,T.navy]];
-    charts.o_band=new Chart(document.getElementById('o_band'),{type:'bar',data:{labels:bands.map(b=>b[0]),datasets:[{data:bands.map(b=>days.filter(d=>d.util>=b[1]&&d.util<b[2]).length),backgroundColor:bands.map(b=>b[3]),borderRadius:6,maxBarThickness:44}]},
-      options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y} day(s)`}}},scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},y:{grid:{color:'#f0eee6'},ticks:{stepSize:1,font:{family:'Space Grotesk',size:11},color:T.muted},beginAtZero:true}}})});
+    charts.o_band=new Chart(document.getElementById('o_band'),{type:'bar',data:{labels:bands.map(b=>b[0]),datasets:[{data:bands.map(b=>days.filter(d=>d.util>=b[1]&&d.util<b[2]).length),backgroundColor:bands.map(b=>b[3]),borderRadius:{topLeft:6,topRight:6},borderSkipped:false,maxBarThickness:44}]},
+      options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y} day(s)`}}},scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},y:{grid:{color:'rgba(17,41,92,.07)'},ticks:{stepSize:1,font:{family:'Space Grotesk',size:11},color:T.muted},beginAtZero:true}}})});
 
     renderTable(rows);
     document.getElementById('o_legend').innerHTML=legendHtml();

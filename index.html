@@ -133,8 +133,7 @@ tbody tr:hover{background:var(--goldL)}
   <!-- ============ LADEN MODULE ============ -->
   <section id="mod-laden" class="module active">
     <div class="controls">
-      <div class="ctrl"><label>Fleet size (trucks/day)</label><input type="number" id="l_fleet" min="1" step="1" value="7"><div class="hint">Contracted lease trucks</div></div>
-      <div class="ctrl"><label>Target trips / truck / day</label><input type="number" id="l_rate" min="0.5" step="0.5" value="2.5"><div class="hint">Productivity benchmark</div></div>
+      <div class="ctrl"><label>Target trips / truck / day</label><input type="number" id="l_rate" min="0.5" step="0.5" value="2.5"><div class="hint">Fleet fixed at 7 trucks</div></div>
       <div class="ctrl"><label>Chart window</label><div class="seg" id="l_range">
         <button data-n="7">7d</button><button data-n="14" class="on">14d</button><button data-n="30">30d</button><button data-n="0">All</button></div></div>
       <div class="target-box"><div class="lbl">Daily lease target</div><div class="val num" id="l_targetVal">17.5<small> trips/day</small></div></div>
@@ -436,7 +435,7 @@ const Laden=(()=>{
 
   function init(rows){RAW=rowsToObj(rows,COLS);bindL();render();}
   function bindL(){
-    document.getElementById('l_fleet').addEventListener('input',e=>{S.fleet=Math.max(1,+e.target.value||1);render();});
+    S.fleet=7; // constant, control removed
     document.getElementById('l_rate').addEventListener('input',e=>{S.rate=Math.max(.5,+e.target.value||.5);render();});
     document.getElementById('l_search').addEventListener('input',e=>{S.search=e.target.value;const allDays=byDay(RAW);renderTable(S.win>0?allDays.slice(-S.win):allDays);});
     document.querySelectorAll('#l_range button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('#l_range button').forEach(x=>x.classList.remove('on'));b.classList.add('on');S.win=+b.dataset.n;render();}));

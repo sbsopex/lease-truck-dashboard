@@ -191,13 +191,13 @@ tbody tr:hover{background:var(--goldL)}
   <!-- ============ OFFHIRE MODULE ============ -->
   <section id="mod-offhire" class="module">
     <div class="controls">
-      <div class="ctrl"><label>Fleet size (trucks/day)</label><input type="number" id="o_fleet" min="1" step="1" value="7"><div class="hint">Contracted lease trucks</div></div>
-      <div class="ctrl"><label>Target trips / truck / day</label><input type="number" id="o_rate" min="0.5" step="0.5" value="2.5"><div class="hint">Productivity benchmark</div></div>
+      <div class="ctrl"><label>Daily trip target</label><input type="number" id="o_target" min="1" step="1" value="30"><div class="hint">Trips/day the fleet should hit</div></div>
+      <div class="ctrl"><label>Target trips / truck / day</label><input type="number" id="o_rate" min="0.5" step="0.5" value="2.5"><div class="hint">Per-unit productivity benchmark</div></div>
       <div class="ctrl"><label>Activity filter</label><div class="seg" id="o_act">
         <button data-act="ALL" class="on">All</button><button data-act="OFFHIRE">Offhire</button><button data-act="REPO">Repo</button><button data-act="OB DOMESTIK">OB Domestik</button></div></div>
-      <div class="target-box"><div class="lbl">Daily trip target</div><div class="val num" id="o_targetVal">17.5<small> trips/day</small></div></div>
+      <div class="target-box"><div class="lbl">Daily trip target</div><div class="val num" id="o_targetVal">30<small> trips/day</small></div></div>
     </div>
-    <div class="kpis" id="o_kpis" style="grid-template-columns:repeat(5,1fr)"></div>
+    <div class="kpis" id="o_kpis" style="grid-template-columns:repeat(6,1fr)"></div>
 
     <div class="grid g2">
       <div class="panel hero"><h3><span class="dot"></span>Daily Lease Truck Utilization</h3>
@@ -226,6 +226,10 @@ tbody tr:hover{background:var(--goldL)}
         <div class="psub">Days by utilization band</div><div class="cwrap"><canvas id="o_band"></canvas></div></div>
     </div>
 
+    <div class="panel" style="margin-top:12px"><h3><span class="dot"></span>Unit Utilization by NOPOL</h3>
+      <div class="psub">Distinct trucks and how hard each was worked (moves per unit). Plates are normalized for case/spacing; a long tail of single-move plates is likely occasional or mis-keyed units.</div>
+      <ul class="lanes" id="o_units" style="max-height:280px;overflow:auto"></ul></div>
+
     <div class="panel" style="margin-top:12px"><h3><span class="dot"></span>Movement Log</h3>
       <div class="psub">Every move in the current filter. Search container / truck / destination / DO / remark.</div>
       <div class="tbl-tools"><input type="text" id="o_search" placeholder="Search…"><span class="num" id="o_tblCount" style="font-size:12px;color:var(--muted)"></span></div>
@@ -234,7 +238,7 @@ tbody tr:hover{background:var(--goldL)}
       </tr></thead><tbody id="o_tbl"></tbody></table></div>
     </div>
 
-    <div class="foot"><b>Offhire &amp; Repo utilization</b> = trips ÷ (fleet × target trips/truck), both editable above. A <b>trip</b> = one truck run: two 20ft to the same destination = one combo trip, each 40ft = its own. Over 100% means the fleet ran harder than the target basis that day.<span id="o_prioNote"></span>
+    <div class="foot"><b>Offhire &amp; Repo utilization</b> = trips ÷ daily trip target (default 30, editable above). A <b>trip</b> = one truck run: two 20ft to the same destination = one combo trip, each 40ft = its own. Over 100% means the fleet ran harder than the daily target. <b>Unique units</b> count distinct NOPOL plates after normalizing case/spacing — the residual single-move plates are likely occasional or mis-keyed trucks, so treat the core-unit count as the real fleet.<span id="o_prioNote"></span>
       <div class="legend" id="o_legend"></div></div>
   </section>
 
@@ -355,7 +359,7 @@ const Laden=(()=>{
 
     // volume stacked + trucks
     destroy('l_vol');
-    charts.l_vol=new Chart(document.getElementById('l_vol'),{data:{labels:win.map(d=>d.short),datasets:[
+    charts.l_vol=new Chart(document.getElementById('l_vol'),{type:'bar',data:{labels:win.map(d=>d.short),datasets:[
       {label:'Lease',data:win.map(d=>d.lease),backgroundColor:T.gold,stack:'s',borderRadius:3,maxBarThickness:30},
       {label:'Oncall',data:win.map(d=>d.oncall),backgroundColor:T.navy,stack:'s',borderRadius:3,maxBarThickness:30},
       {label:'Trucks',type:'line',data:win.map(d=>d.nTrucks),borderColor:T.red,backgroundColor:T.red,borderWidth:2.5,pointRadius:2,yAxisID:'y1',tension:.3,order:0}]},
@@ -429,15 +433,16 @@ const Laden=(()=>{
 const Offhire=(()=>{
   const COLS=['date','cust','origin','dest','activity','trucking','nopol','cont','size','progress','do','remark'];
   const ACT_COLOR={'OFFHIRE':T.navy,'REPO':T.gold,'OB DOMESTIK':T.green};
-  let RAW=[],S={act:'ALL',fleet:7,rate:2.5,search:''};
+  let RAW=[],S={act:'ALL',target:30,rate:2.5,search:''};
+  const normUnit=s=>(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   function teu(s){return is20(s)?1:2;}
   function filtered(){return RAW.filter(r=>S.act==='ALL'||r.activity===S.act);}
-  function tripsFor(rows){const g={};rows.forEach(r=>{const k=r.date+'|'+r.nopol+'|'+r.dest+'|'+r.activity;(g[k]=g[k]||{a:0,b:0});is20(r.size)?g[k].a++:g[k].b++;});let t=0;Object.values(g).forEach(v=>t+=Math.ceil(v.a/2)+v.b);return t;}
-  function byDay(rows){const m={};rows.forEach(r=>{const k=dkey(r.date);(m[k]=m[k]||{key:k,label:dlabel(r.date),short:shortLabel(r.date),cont:0,teu:0,trucks:new Set(),act:{},rows:[]});const d=m[k];d.cont++;d.teu+=teu(r.size);d.trucks.add(r.nopol);d.act[r.activity]=(d.act[r.activity]||0)+1;d.rows.push(r);});const arr=Object.values(m).sort((a,b)=>a.key<b.key?-1:1);arr.forEach(d=>{d.trips=tripsFor(d.rows);d.nTrucks=d.trucks.size;d.tpt=d.nTrucks?d.trips/d.nTrucks:0;});return arr;}
+  function tripsFor(rows){const g={};rows.forEach(r=>{const k=r.date+'|'+r.unit+'|'+r.dest+'|'+r.activity;(g[k]=g[k]||{a:0,b:0});is20(r.size)?g[k].a++:g[k].b++;});let t=0;Object.values(g).forEach(v=>t+=Math.ceil(v.a/2)+v.b);return t;}
+  function byDay(rows){const m={};rows.forEach(r=>{const k=dkey(r.date);(m[k]=m[k]||{key:k,label:dlabel(r.date),short:shortLabel(r.date),cont:0,teu:0,trucks:new Set(),act:{},rows:[]});const d=m[k];d.cont++;d.teu+=teu(r.size);d.trucks.add(r.unit);d.act[r.activity]=(d.act[r.activity]||0)+1;d.rows.push(r);});const arr=Object.values(m).sort((a,b)=>a.key<b.key?-1:1);arr.forEach(d=>{d.trips=tripsFor(d.rows);d.nTrucks=d.trucks.size;d.tpt=d.nTrucks?d.trips/d.nTrucks:0;});return arr;}
 
   function render(){
-    const rows=filtered(),days=byDay(rows),target=S.fleet*S.rate;
-    document.getElementById('o_targetVal').innerHTML=target.toFixed(1)+'<small> trips/day</small>';
+    const rows=filtered(),days=byDay(rows),target=S.target;
+    document.getElementById('o_targetVal').innerHTML=target.toFixed(0)+'<small> trips/day</small>';
     days.forEach(d=>d.util=target>0?d.trips/target*100:0);
     if(days.length){document.getElementById('periodLabel').textContent=days[0].short+'  —  '+days[days.length-1].short;
       document.getElementById('rowCount').textContent=rows.length+' moves · '+days.length+' days';}
@@ -448,14 +453,23 @@ const Offhire=(()=>{
     const totTeu=rows.reduce((s,r)=>s+teu(r.size),0);
     const peak=days.reduce((m,d)=>d.util>m.util?d:m,{util:-1,short:'—'});
     const low=days.reduce((m,d)=>d.util<m.util?d:m,{util:1e9,short:'—'});
+    // unique units (normalized NOPOL) + per-unit workload
+    const unitMoves={};rows.forEach(r=>{if(r.unit)unitMoves[r.unit]=(unitMoves[r.unit]||0)+1;});
+    const unitArr=Object.entries(unitMoves).sort((a,b)=>b[1]-a[1]);
+    const uniqueUnits=unitArr.length;
+    const core=unitArr.filter(u=>u[1]>=5).length; // workhorses (5+ moves)
     const kp=[
       {k:'Avg Daily Utilization',v:avgUtil.toFixed(0)+'<small>%</small>',pill:pillCls(avgUtil),pillT:avgUtil>=90?'On target':avgUtil>=60?'Moderate':'Under target',accent:true},
       {k:'Container Moves',v:rows.length,d:totTeu+' TEU total'},
       {k:'Total Trips',v:totTrips,d:'combo-adjusted runs'},
-      {k:'Avg Fleet Deployed',v:avgTrucks.toFixed(1),d:'distinct trucks/day'},
+      {k:'Unique Units (NOPOL)',v:uniqueUnits,d:core+' core (5+ moves)'},
+      {k:'Avg Fleet / Day',v:avgTrucks.toFixed(1),d:'distinct trucks/day'},
       {k:'Peak vs Lowest',v:peak.util.toFixed(0)+'<small>%</small>',d:peak.short+' · low '+(low.util>1e8?'—':low.util.toFixed(0)+'% '+low.short)},
     ];
     document.getElementById('o_kpis').innerHTML=kp.map(x=>`<div class="kpi ${x.accent?'accent':''}"><div class="k">${x.k}</div><div class="v num">${x.v}</div>${x.pill?`<span class="pill ${x.pill}">${x.pillT}</span>`:`<div class="d">${x.d}</div>`}</div>`).join('');
+
+    // unit utilization list
+    lanesList('o_units',unitArr,'');
 
     destroy('o_util');
     charts.o_util=new Chart(document.getElementById('o_util'),{type:'bar',
@@ -473,7 +487,7 @@ const Offhire=(()=>{
     const acts=['OFFHIRE','REPO','OB DOMESTIK'];
     const ds=acts.map(a=>({label:a,data:days.map(d=>d.act[a]||0),backgroundColor:ACT_COLOR[a],stack:'s',borderRadius:3,maxBarThickness:38}));
     ds.push({label:'Trucks',type:'line',data:days.map(d=>d.nTrucks),borderColor:T.red,backgroundColor:T.red,borderWidth:2.5,pointRadius:3,yAxisID:'y1',tension:.3,order:0});
-    charts.o_vol=new Chart(document.getElementById('o_vol'),{data:{labels:days.map(d=>d.short),datasets:ds},
+    charts.o_vol=new Chart(document.getElementById('o_vol'),{type:'bar',data:{labels:days.map(d=>d.short),datasets:ds},
       options:baseOpts({plugins:{legend:{display:true,position:'bottom',labels:{font:{family:'Inter',size:11},boxWidth:11,boxHeight:11,padding:12}},tooltip:{mode:'index',intersect:false}},
         scales:{x:{stacked:true,grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},y:{stacked:true,grid:{color:'#f0eee6'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted}},y1:{position:'right',beginAtZero:true,grid:{display:false},ticks:{font:{family:'Space Grotesk',size:11},color:T.red}}}})});
 
@@ -509,9 +523,9 @@ const Offhire=(()=>{
       return `<tr><td class="num">${r.date}</td><td><span class="badge ${badge(r.activity)}">${r.activity}</span></td><td>${r.dest}</td><td>${r.size}</td>
       <td class="num">${r.nopol}</td><td class="num">${r.cont}</td><td>${r.do}${prio}</td><td class="rem" title="${r.remark.replace(/"/g,'&quot;')}">${r.remark||'—'}</td></tr>`;}).join('');
   }
-  function init(rows){RAW=rowsToObj(rows,COLS);bind();}
+  function init(rows){RAW=rowsToObj(rows,COLS);RAW.forEach(r=>r.unit=normUnit(r.nopol));bind();}
   function bind(){
-    document.getElementById('o_fleet').addEventListener('input',e=>{S.fleet=Math.max(1,+e.target.value||1);render();});
+    document.getElementById('o_target').addEventListener('input',e=>{S.target=Math.max(1,+e.target.value||1);render();});
     document.getElementById('o_rate').addEventListener('input',e=>{S.rate=Math.max(.5,+e.target.value||.5);render();});
     document.getElementById('o_search').addEventListener('input',e=>{S.search=e.target.value;renderTable(filtered());});
     document.querySelectorAll('#o_act button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('#o_act button').forEach(x=>x.classList.remove('on'));b.classList.add('on');S.act=b.dataset.act;render();}));
@@ -539,11 +553,12 @@ function switchMod(mod){
 (async function(){
   const ladenRows = await gvizLoad(LADEN.gid, c=>[gc(c,1),gc(c,2),gc(c,4),gc(c,5),gc(c,6),gc(c,7),gc(c,8)+(gc(c,9)?' '+gc(c,9):''),gc(c,10),gc(c,11),gc(c,12),gc(c,16),gc(c,15)]) || LADEN_ROWS;
   const offRows   = await gvizLoad(OFFHIRE.gid, c=>[gc(c,1),gc(c,2),gc(c,3),gc(c,4),gc(c,5),gc(c,6),gc(c,7),gc(c,8),gc(c,10),gc(c,11),gc(c,12),gc(c,14)]) || OFFHIRE_ROWS;
-  // Laden: expose a re-render bound to its internal render via init
-  Laden.init(ladenRows);
-  Offhire.init(offRows);
+  // Attach the module toggle FIRST so a chart error in one module can never
+  // disable navigation to the other.
   document.querySelectorAll('.modnav button').forEach(b=>b.addEventListener('click',()=>switchMod(b.dataset.mod)));
   document.getElementById('hdrSub').textContent=SUB.laden;
+  try{ Laden.init(ladenRows); }catch(e){ console.error('Laden module error:',e); }
+  try{ Offhire.init(offRows); }catch(e){ console.error('Offhire module error:',e); }
 })();
 </script>
 </body>

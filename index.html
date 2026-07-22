@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 <style>
 :root{
   --navy:#11295c;--navy2:#1d3a73;--gold:#c99a2e;--goldL:#f3e6c2;
@@ -262,6 +263,13 @@ const OFFHIRE_ROWS = [["14/07/2026","MSL","SBS","GLORIUS","OFFHIRE","LT Logisly"
 /* ===================== SHARED CORE ===================== */
 const T={navy:'#11295c',navy2:'#1d3a73',gold:'#c99a2e',goldL:'#f3e6c2',red:'#a6332b',green:'#1f7a3d',muted:'#6b7280'};
 const charts={};
+/* Value labels: registered but OFF by default, opt-in per chart via plugins.datalabels */
+if(window.ChartDataLabels){Chart.register(window.ChartDataLabels);Chart.defaults.set('plugins.datalabels',{display:false});}
+const DLBASE={color:T.navy,font:{family:'Space Grotesk',size:10,weight:'600'},clamp:true};
+function dlBar(fmt){return Object.assign({},DLBASE,{anchor:'end',align:'end',offset:1,display:c=>(+c.dataset.data[c.dataIndex])>0,formatter:fmt||(v=>v)});}
+function dlEnd(fmt){return Object.assign({},DLBASE,{anchor:'end',align:'right',offset:3,display:c=>(+c.dataset.data[c.dataIndex])>0,formatter:fmt||(v=>v)});}
+function dlStack(){return {color:'#fff',font:{family:'Space Grotesk',size:10,weight:'700'},anchor:'center',align:'center',display:c=>(+c.dataset.data[c.dataIndex])>2,formatter:v=>v};}
+function dlDonut(){return {color:'#fff',font:{family:'Space Grotesk',size:11,weight:'700'},display:'auto',formatter:v=>v};}
 function destroy(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
 function dkey(d){const[a,b,c]=d.split('/');return `${c}-${b}-${a}`;}
 function dlabel(d){const[a,b,c]=d.split('/');return new Date(+c,+b-1,+a).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});}
@@ -288,7 +296,7 @@ function donutOpts(ex){return deepMerge({responsive:true,maintainAspectRatio:fal
   plugins:{legend:{position:'bottom',labels:{font:{family:'Inter',size:12},padding:14,boxWidth:10,boxHeight:10,usePointStyle:true,pointStyle:'circle'}},tooltip:TIP}},ex||{});}
 function truckLine(data,axis){return {label:'Trucks',type:'line',data,borderColor:T.red,backgroundColor:T.red,
   borderWidth:2.25,pointRadius:3.2,pointHoverRadius:5.5,pointBackgroundColor:'#fff',pointBorderColor:T.red,pointBorderWidth:2,
-  yAxisID:axis||'y1',tension:.4,order:-1,clip:false};}
+  yAxisID:axis||'y1',tension:.4,order:-1,clip:false,datalabels:{display:false}};}
 function vgrad(chart,hex){const a=chart.chartArea;if(!a)return hex;const g=chart.ctx.createLinearGradient(0,a.top,0,a.bottom);g.addColorStop(0,hex);g.addColorStop(1,hex+'d9');return g;}
 function refLine(id,val,label,color){return {id,afterDatasetsDraw(c){const y=c.scales.y.getPixelForValue(val);if(isNaN(y))return;const{left,right}=c.chartArea;const g=c.ctx;g.save();g.strokeStyle=color;g.setLineDash([5,4]);g.lineWidth=1.4;g.globalAlpha=.85;g.beginPath();g.moveTo(left,y);g.lineTo(right,y);g.stroke();g.setLineDash([]);g.globalAlpha=1;g.fillStyle=color;g.font='600 10px Inter';const tw=g.measureText(label).width;g.fillStyle='rgba(255,255,255,.85)';g.fillRect(right-tw-8,y-14,tw+6,12);g.fillStyle=color;g.fillText(label,right-tw-5,y-5);g.restore();}};}
 function rowsToObj(rows,cols){return rows.map(r=>{const o={};cols.forEach((c,i)=>o[c]=(r[i]||'').toString().trim());return o;});}
@@ -366,7 +374,7 @@ const Laden=(()=>{
     // util chart
     destroy('l_util');
     charts.l_util=new Chart(document.getElementById('l_util'),{type:'bar',
-      data:{labels:win.map(d=>d.short),datasets:[{data:win.map(d=>+d.util.toFixed(1)),backgroundColor:(c)=>vgrad(c.chart,utilHex(win[c.dataIndex].util)),hoverBackgroundColor:(c)=>utilHex(win[c.dataIndex].util),borderRadius:{topLeft:5,topRight:5,bottomLeft:2,bottomRight:2},borderSkipped:false,maxBarThickness:36}]},
+      data:{labels:win.map(d=>d.short),datasets:[{data:win.map(d=>+d.util.toFixed(1)),backgroundColor:(c)=>vgrad(c.chart,utilHex(win[c.dataIndex].util)),hoverBackgroundColor:(c)=>utilHex(win[c.dataIndex].util),borderRadius:{topLeft:5,topRight:5,bottomLeft:2,bottomRight:2},borderSkipped:false,maxBarThickness:36,datalabels:dlBar(v=>Math.round(v)+'%')}]},
       options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const d=win[c.dataIndex];return [` Utilization: ${c.parsed.y}%`,` Lease: ${d.lease} / target ${target.toFixed(1)}`,` Trucks: ${d.nTrucks}`];}}}},
         scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:10},color:T.muted,maxRotation:0,autoSkip:true,maxTicksLimit:15}},
                 y:{grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted,callback:v=>v+'%'},beginAtZero:true,suggestedMax:120}}})});
@@ -375,14 +383,14 @@ const Laden=(()=>{
     // mix donut
     destroy('l_mix');
     charts.l_mix=new Chart(document.getElementById('l_mix'),{type:'doughnut',
-      data:{labels:['Lease truck','Oncall'],datasets:[{data:[totLease,totOncall],backgroundColor:[T.gold,T.navy],borderWidth:3,borderColor:'#fff',hoverOffset:6}]},
+      data:{labels:['Lease truck','Oncall'],datasets:[{data:[totLease,totOncall],backgroundColor:[T.gold,T.navy],borderWidth:3,borderColor:'#fff',hoverOffset:6,datalabels:dlDonut()}]},
       options:donutOpts({cutout:'62%',plugins:{tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed} (${(c.parsed/(totLease+totOncall)*100).toFixed(0)}%)`}}}})});
 
     // volume stacked + trucks
     destroy('l_vol');
     charts.l_vol=new Chart(document.getElementById('l_vol'),{type:'bar',data:{labels:win.map(d=>d.short),datasets:[
-      {label:'Lease',data:win.map(d=>d.lease),backgroundColor:T.gold,stack:'s',borderRadius:{topLeft:4,topRight:4},borderSkipped:false,maxBarThickness:30},
-      {label:'Oncall',data:win.map(d=>d.oncall),backgroundColor:T.navy,stack:'s',borderRadius:{topLeft:4,topRight:4},borderSkipped:false,maxBarThickness:30},
+      {label:'Lease',data:win.map(d=>d.lease),backgroundColor:T.gold,stack:'s',borderRadius:{topLeft:4,topRight:4},borderSkipped:false,maxBarThickness:30,datalabels:dlStack()},
+      {label:'Oncall',data:win.map(d=>d.oncall),backgroundColor:T.navy,stack:'s',borderRadius:{topLeft:4,topRight:4},borderSkipped:false,maxBarThickness:30,datalabels:dlStack()},
       truckLine(win.map(d=>d.nTrucks))]},
       options:baseOpts({plugins:{legend:{display:true,position:'bottom',labels:{font:{family:'Inter',size:11},boxWidth:11,boxHeight:11,padding:12}},tooltip:{mode:'index',intersect:false}},
         scales:{x:{stacked:true,grid:{display:false},ticks:{font:{family:'Inter',size:10},color:T.muted,maxRotation:0,autoSkip:true,maxTicksLimit:15}},
@@ -394,7 +402,7 @@ const Laden=(()=>{
     const dc={};RAW.forEach(r=>{const c=catOf(r.remCat);if(c&&c!=='Other / detail')dc[c]=(dc[c]||0)+1;});
     const arr=Object.entries(dc).sort((a,b)=>b[1]-a[1]).slice(0,7);
     charts.l_delay=new Chart(document.getElementById('l_delay'),{type:'bar',
-      data:{labels:arr.map(x=>SHORT[x[0]]||x[0]),datasets:[{data:arr.map(x=>x[1]),backgroundColor:arr.map((x,i)=>i===0?T.red:i<3?T.gold:T.navy2),borderRadius:{topRight:5,bottomRight:5},borderSkipped:false,maxBarThickness:24}]},
+      data:{labels:arr.map(x=>SHORT[x[0]]||x[0]),datasets:[{data:arr.map(x=>x[1]),backgroundColor:arr.map((x,i)=>i===0?T.red:i<3?T.gold:T.navy2),borderRadius:{topRight:5,bottomRight:5},borderSkipped:false,maxBarThickness:24,datalabels:dlEnd()}]},
       options:baseOpts({indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.x} trips flagged`}}},
         scales:{x:{grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted},beginAtZero:true},
                 y:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.ink}}}})});
@@ -410,7 +418,7 @@ const Laden=(()=>{
     const sm={};RAW.forEach(r=>{const s=r.size||'—';sm[s]=(sm[s]||0)+1;});
     const sarr=Object.entries(sm).sort((a,b)=>b[1]-a[1]);
     charts.l_size=new Chart(document.getElementById('l_size'),{type:'doughnut',
-      data:{labels:sarr.map(x=>x[0]),datasets:[{data:sarr.map(x=>x[1]),backgroundColor:[T.navy,T.gold,T.green,T.navy2,'#b98a2a','#7a8aa5'],borderWidth:3,borderColor:'#fff',hoverOffset:6}]},
+      data:{labels:sarr.map(x=>x[0]),datasets:[{data:sarr.map(x=>x[1]),backgroundColor:[T.navy,T.gold,T.green,T.navy2,'#b98a2a','#7a8aa5'],borderWidth:3,borderColor:'#fff',hoverOffset:6,datalabels:dlDonut()}]},
       options:donutOpts({cutout:'58%',plugins:{legend:{labels:{font:{family:'Inter',size:11},padding:10,boxWidth:9,boxHeight:9,usePointStyle:true,pointStyle:'circle'}},tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed}`}}}})});
 
     // weekly
@@ -499,26 +507,26 @@ const Offhire=(()=>{
 
     destroy('o_util');
     charts.o_util=new Chart(document.getElementById('o_util'),{type:'bar',
-      data:{labels:win.map(d=>d.short),datasets:[{data:win.map(d=>+d.util.toFixed(1)),backgroundColor:(c)=>vgrad(c.chart,utilHex(win[c.dataIndex].util)),hoverBackgroundColor:(c)=>utilHex(win[c.dataIndex].util),borderRadius:{topLeft:6,topRight:6,bottomLeft:2,bottomRight:2},borderSkipped:false,maxBarThickness:48}]},
+      data:{labels:win.map(d=>d.short),datasets:[{data:win.map(d=>+d.util.toFixed(1)),backgroundColor:(c)=>vgrad(c.chart,utilHex(win[c.dataIndex].util)),hoverBackgroundColor:(c)=>utilHex(win[c.dataIndex].util),borderRadius:{topLeft:6,topRight:6,bottomLeft:2,bottomRight:2},borderSkipped:false,maxBarThickness:48,datalabels:dlBar(v=>Math.round(v)+'%')}]},
       options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const d=win[c.dataIndex];return [` Utilization: ${c.parsed.y}%`,` Trips: ${d.trips} / target ${target.toFixed(1)}`,` Trucks: ${d.nTrucks}`];}}}},
         scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:10},color:T.muted,maxRotation:0,autoSkip:true,maxTicksLimit:16}},y:{grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted,callback:v=>v+'%'},beginAtZero:true,suggestedMax:120}}})});
     charts.o_util.config.plugins=[refLine('oref',100,'100% target',T.red)];charts.o_util.update();
 
     destroy('o_mix');
     const m={};rows.forEach(r=>m[r.activity]=(m[r.activity]||0)+1);const ml=Object.keys(m);
-    charts.o_mix=new Chart(document.getElementById('o_mix'),{type:'doughnut',data:{labels:ml,datasets:[{data:ml.map(l=>m[l]),backgroundColor:ml.map(l=>ACT_COLOR[l]||T.muted),borderWidth:3,borderColor:'#fff',hoverOffset:6}]},
+    charts.o_mix=new Chart(document.getElementById('o_mix'),{type:'doughnut',data:{labels:ml,datasets:[{data:ml.map(l=>m[l]),backgroundColor:ml.map(l=>ACT_COLOR[l]||T.muted),borderWidth:3,borderColor:'#fff',hoverOffset:6,datalabels:dlDonut()}]},
       options:donutOpts({cutout:'62%',plugins:{tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed} (${(c.parsed/rows.length*100).toFixed(0)}%)`}}}})});
 
     destroy('o_vol');
     const acts=['OFFHIRE','REPO','OB DOMESTIK'];
-    const ds=acts.map(a=>({label:a,data:win.map(d=>d.act[a]||0),backgroundColor:ACT_COLOR[a],stack:'s',borderRadius:{topLeft:4,topRight:4},borderSkipped:false,maxBarThickness:38}));
+    const ds=acts.map(a=>({label:a,data:win.map(d=>d.act[a]||0),backgroundColor:ACT_COLOR[a],stack:'s',borderRadius:{topLeft:4,topRight:4},borderSkipped:false,maxBarThickness:38,datalabels:dlStack()}));
     ds.push(truckLine(win.map(d=>d.nTrucks)));
     charts.o_vol=new Chart(document.getElementById('o_vol'),{type:'bar',data:{labels:win.map(d=>d.short),datasets:ds},
       options:baseOpts({plugins:{legend:{display:true,position:'bottom',labels:{font:{family:'Inter',size:11},boxWidth:11,boxHeight:11,padding:12}},tooltip:{mode:'index',intersect:false}},
         scales:{x:{stacked:true,grid:{display:false},ticks:{font:{family:'Inter',size:10},color:T.muted,maxRotation:0,autoSkip:true,maxTicksLimit:16}},y:{stacked:true,grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted}},y1:{position:'right',beginAtZero:true,grace:'35%',grid:{display:false},border:{display:false},ticks:{font:{family:'Space Grotesk',size:11},color:T.red,padding:4}}}})});
 
     destroy('o_tpt');
-    charts.o_tpt=new Chart(document.getElementById('o_tpt'),{type:'bar',data:{labels:win.map(d=>d.short),datasets:[{data:win.map(d=>+d.tpt.toFixed(2)),backgroundColor:(c)=>vgrad(c.chart,win[c.dataIndex].tpt>=S.rate?T.green:win[c.dataIndex].tpt>=S.rate*.7?T.gold:T.red),borderRadius:{topLeft:6,topRight:6,bottomLeft:2,bottomRight:2},borderSkipped:false,maxBarThickness:48}]},
+    charts.o_tpt=new Chart(document.getElementById('o_tpt'),{type:'bar',data:{labels:win.map(d=>d.short),datasets:[{data:win.map(d=>+d.tpt.toFixed(2)),backgroundColor:(c)=>vgrad(c.chart,win[c.dataIndex].tpt>=S.rate?T.green:win[c.dataIndex].tpt>=S.rate*.7?T.gold:T.red),borderRadius:{topLeft:6,topRight:6,bottomLeft:2,bottomRight:2},borderSkipped:false,maxBarThickness:48,datalabels:dlBar(v=>(+v).toFixed(1))}]},
       options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y} trips/truck (target ${S.rate})`}}},scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:10},color:T.muted,maxRotation:0,autoSkip:true,maxTicksLimit:16}},y:{grid:{color:'rgba(17,41,92,.07)'},ticks:{font:{family:'Space Grotesk',size:11},color:T.muted},beginAtZero:true}}})});
     charts.o_tpt.config.plugins=[refLine('otref',S.rate,'target '+S.rate,T.navy)];charts.o_tpt.update();
 
@@ -527,12 +535,12 @@ const Offhire=(()=>{
 
     destroy('o_size');
     const sm={};let scount=0;rows.forEach(r=>contList(r).forEach(x=>{const k=is20(x.s)?'20ft':'40ft';sm[k]=(sm[k]||0)+1;scount++;}));const sl=Object.keys(sm);
-    charts.o_size=new Chart(document.getElementById('o_size'),{type:'doughnut',data:{labels:sl,datasets:[{data:sl.map(l=>sm[l]),backgroundColor:[T.navy,T.gold],borderWidth:3,borderColor:'#fff',hoverOffset:6}]},
+    charts.o_size=new Chart(document.getElementById('o_size'),{type:'doughnut',data:{labels:sl,datasets:[{data:sl.map(l=>sm[l]),backgroundColor:[T.navy,T.gold],borderWidth:3,borderColor:'#fff',hoverOffset:6,datalabels:dlDonut()}]},
       options:donutOpts({cutout:'62%',plugins:{tooltip:{callbacks:{label:c=>` ${c.label}: ${c.parsed} (${(c.parsed/(scount||1)*100).toFixed(0)}%)`}}}})});
 
     destroy('o_band');
     const bands=[['<60%',0,60,T.red],['60–89%',60,90,T.gold],['90–110%',90,110.0001,T.green],['>110%',110.0001,1e9,T.navy]];
-    charts.o_band=new Chart(document.getElementById('o_band'),{type:'bar',data:{labels:bands.map(b=>b[0]),datasets:[{data:bands.map(b=>win.filter(d=>d.util>=b[1]&&d.util<b[2]).length),backgroundColor:bands.map(b=>b[3]),borderRadius:{topLeft:6,topRight:6},borderSkipped:false,maxBarThickness:44}]},
+    charts.o_band=new Chart(document.getElementById('o_band'),{type:'bar',data:{labels:bands.map(b=>b[0]),datasets:[{data:bands.map(b=>win.filter(d=>d.util>=b[1]&&d.util<b[2]).length),backgroundColor:bands.map(b=>b[3]),borderRadius:{topLeft:6,topRight:6},borderSkipped:false,maxBarThickness:44,datalabels:dlBar()}]},
       options:baseOpts({plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y} day(s)`}}},scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:T.muted}},y:{grid:{color:'rgba(17,41,92,.07)'},ticks:{stepSize:1,font:{family:'Space Grotesk',size:11},color:T.muted},beginAtZero:true}}})});
 
     renderTable(rows);

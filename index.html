@@ -123,6 +123,7 @@ tbody tr:hover{background:var(--goldL)}
     <div class="period">
       Reporting window<b id="periodLabel">—</b>
       <span id="rowCount" class="num"></span>
+      <div id="dataSourceBadge" style="margin-top:7px;font-size:10.5px;line-height:1.6"></div>
     </div>
   </div></header>
 
@@ -301,15 +302,34 @@ function vgrad(chart,hex){const a=chart.chartArea;if(!a)return hex;const g=chart
 function refLine(id,val,label,color){return {id,afterDatasetsDraw(c){const y=c.scales.y.getPixelForValue(val);if(isNaN(y))return;const{left,right}=c.chartArea;const g=c.ctx;g.save();g.strokeStyle=color;g.setLineDash([5,4]);g.lineWidth=1.4;g.globalAlpha=.85;g.beginPath();g.moveTo(left,y);g.lineTo(right,y);g.stroke();g.setLineDash([]);g.globalAlpha=1;g.fillStyle=color;g.font='600 10px Inter';const tw=g.measureText(label).width;g.fillStyle='rgba(255,255,255,.85)';g.fillRect(right-tw-8,y-14,tw+6,12);g.fillStyle=color;g.fillText(label,right-tw-5,y-5);g.restore();}};}
 function rowsToObj(rows,cols){return rows.map(r=>{const o={};cols.forEach((c,i)=>o[c]=(r[i]||'').toString().trim());return o;});}
 
-async function gvizLoad(gid,mapper){
-  if(!GVIZ.SHEET_ID||!gid) return null;
+/* Records WHY each module ended up live vs. on the embedded snapshot, so this is
+   visible on-screen instead of only in devtools console (see #dataSourceBadge). */
+const FETCH_STATUS = { laden: null, offhire: null };
+async function gvizLoad(gid,mapper,label){
+  const fail=(reason)=>{ if(label) FETCH_STATUS[label]={ok:false,reason}; return null; };
+  if(!GVIZ.SHEET_ID||!gid) return fail('No SHEET_ID/gid configured');
   try{
     const url=`https://docs.google.com/spreadsheets/d/${GVIZ.SHEET_ID}/gviz/tq?tqx=out:json&gid=${gid}`;
-    const txt=await (await fetch(url)).text();
+    const res=await fetch(url);
+    const txt=await res.text();
+    if(!res.ok) return fail(`HTTP ${res.status} from Google — sheet is likely not shared as "Anyone with the link"`);
+    if(!txt.includes('google.visualization.Query.setResponse'))
+      return fail('Response was not gviz JSON (looks like a login/permission page) — check Share settings on the sheet: General access should be "Anyone with the link → Viewer"');
     const j=JSON.parse(txt.substring(txt.indexOf('{'),txt.lastIndexOf('}')+1));
     const rows=j.table.rows.map(tr=>mapper(tr.c)).filter(r=>r&&r[0]&&/\//.test(r[0]));
-    return rows.length?rows:null;
-  }catch(e){console.warn('gviz failed',gid,e);return null;}
+    if(!rows.length) return fail('Connected OK but parsed 0 valid rows — check the gid matches this tab and the column layout hasn\'t shifted');
+    if(label) FETCH_STATUS[label]={ok:true,reason:`${rows.length} rows fetched live just now`};
+    return rows;
+  }catch(e){ return fail('Fetch threw: '+e.message+' (network/CORS block)'); }
+}
+function renderDataBadge(){
+  const el=document.getElementById('dataSourceBadge'); if(!el) return;
+  const mk=(name,st)=>{
+    if(!st) return `<span style="color:${T.muted}">${name}: —</span>`;
+    const color=st.ok?T.green:T.gold;
+    return `<span title="${st.reason.replace(/"/g,'&quot;')}" style="color:${color};cursor:help">${st.ok?'●':'●'} ${name}: ${st.ok?'Live':'Snapshot'}</span>`;
+  };
+  el.innerHTML=mk('Laden',FETCH_STATUS.laden)+' &nbsp;·&nbsp; '+mk('Offhire',FETCH_STATUS.offhire);
 }
 const gc=(c,i)=>{const cell=c[i];if(!cell||cell.v==null)return '';
   if(cell.f!=null)return cell.f.toString().trim();
@@ -588,12 +608,13 @@ function switchMod(mod){
 }
 
 (async function(){
-  const ladenRows = await gvizLoad(LADEN.gid, c=>[gc(c,1),gc(c,2),gc(c,4),gc(c,5),gc(c,6),gc(c,7),gc(c,8)+(gc(c,9)?' '+gc(c,9):''),gc(c,10),gc(c,11),gc(c,12),gc(c,16),gc(c,15)]) || LADEN_ROWS;
-  const offRows   = await gvizLoad(OFFHIRE.gid, c=>[gc(c,1),gc(c,2),gc(c,3),gc(c,4),gc(c,5),gc(c,6),gc(c,7),gc(c,8),gc(c,9),gc(c,11),gc(c,12),gc(c,13),gc(c,14)]) || OFFHIRE_ROWS;
+  const ladenRows = await gvizLoad(LADEN.gid, c=>[gc(c,1),gc(c,2),gc(c,4),gc(c,5),gc(c,6),gc(c,7),gc(c,8)+(gc(c,9)?' '+gc(c,9):''),gc(c,10),gc(c,11),gc(c,12),gc(c,16),gc(c,15)], 'laden') || LADEN_ROWS;
+  const offRows   = await gvizLoad(OFFHIRE.gid, c=>[gc(c,1),gc(c,2),gc(c,3),gc(c,4),gc(c,5),gc(c,6),gc(c,7),gc(c,8),gc(c,9),gc(c,11),gc(c,12),gc(c,13),gc(c,14)], 'offhire') || OFFHIRE_ROWS;
   // Attach the module toggle FIRST so a chart error in one module can never
   // disable navigation to the other.
   document.querySelectorAll('.modnav button').forEach(b=>b.addEventListener('click',()=>switchMod(b.dataset.mod)));
   document.getElementById('hdrSub').textContent=SUB.laden;
+  renderDataBadge();
   try{ Laden.init(ladenRows); }catch(e){ console.error('Laden module error:',e); }
   try{ Offhire.init(offRows); }catch(e){ console.error('Offhire module error:',e); }
 })();
